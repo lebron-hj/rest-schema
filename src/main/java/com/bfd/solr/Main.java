@@ -1,0 +1,294 @@
+package com.bfd.solr;
+
+import java.io.File;
+
+import net.sf.json.JSONObject;
+
+import org.apache.commons.lang.StringUtils;
+
+import com.google.common.collect.Sets;
+
+import bfd.sys.solr.util.Configuration;
+import bfd.sys.solr.util.DefaultConfig;
+
+public class Main {
+	
+	public static void main(String[] args) {
+		String configFile = System.getProperty("config.file","config.properties");
+		if(StringUtils.isEmpty(configFile)){
+			System.out.println("config file must be set in system property.");
+			System.exit(-1);
+		}
+		Configuration conf = new DefaultConfig(configFile);
+		if(!conf.contains("cid")||!conf.contains("type")||!conf.contains("zkAddress")||!conf.contains("zk")){
+			System.out.println("cid,type,zkAddress,zk must be set in config file.");
+			System.exit(-2);
+		}
+		String cid = conf.getString("cid");
+		ZkManager.init(conf);
+		switch(conf.getInt("type")){
+		case 0:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			ZkManager.dumpConfig();
+			return ;
+		case 16:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			//添加cid
+			if(!conf.contains("cidvalue")){
+				System.out.println("cidvalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			ZkManager.addCustomer(cid,conf.getString("cidvalue"));
+            //添加shard
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			JSONObject sv = JSONObject.fromObject(conf.getString("defaultValue")).getJSONObject("shard");
+			Shard shard = new Shard();
+			shard.setBhash(sv.getInt("bhash"));
+			shard.setEhash(sv.getInt("ehash"));
+			shard.setNo(sv.getInt("no"));
+			shard.setState(sv.getInt("state"));
+			shard.setName(conf.getString("shardname"));
+			ZkManager.addShardInfo(cid, shard);
+            //添加master
+			JSONObject nv = JSONObject.fromObject(conf.getString("defaultValue")).getJSONObject("master");
+			shard = new Shard();
+			shard.setName(conf.getString("shardname"));
+			SolrNode node = new SolrNode();
+			node.setState(nv.getInt("state"));
+			String nodesValue = null;
+			for(int i = 0 ; i < nv.getJSONArray("nodes").size(); i++){
+				nodesValue = nv.getJSONArray("nodes").getJSONObject(i).getString("url");
+				nodesValue = nodesValue+cid;
+				nv.getJSONArray("nodes").getJSONObject(i).put("url", nodesValue);
+			}
+			node.setData(nv.getJSONArray("nodes").toString());
+			shard.setMaster(node);
+			ZkManager.addShardMaster(cid, shard);
+            //添加slave
+			nv = JSONObject.fromObject(conf.getString("defaultValue")).getJSONObject("slave");
+			shard = new Shard();
+			shard.setName(conf.getString("shardname"));
+			node = new SolrNode();
+			node.setState(nv.getInt("state"));
+			for(int i = 0 ; i < nv.getJSONArray("nodes").size(); i++){
+				nodesValue = nv.getJSONArray("nodes").getJSONObject(i).getString("url");
+				nodesValue = nodesValue+cid;
+				nv.getJSONArray("nodes").getJSONObject(i).put("url", nodesValue);
+			}
+			node.setData(nv.getJSONArray("nodes").toString());
+			shard.setSlave(node);
+			ZkManager.addShardSlave(cid, shard);
+            //初始化fields
+//			ZkManager.updateFields(cid, conf.getString("fields"));
+			return ;
+		case 17:
+			//更新servers节点
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			ZkManager.updateServers(conf, cid);
+			return ;
+		case 18:
+			//更新servers节点
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			ZkManager.addServers(conf, cid);
+			return ;
+		case 1:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("fields")){
+				System.out.println("fields must be set in config file when update fields.");
+				System.exit(-2);
+			}
+			ZkManager.updateFields(cid, conf.getString("fields"));
+			return ;
+		case 2:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("fieldname")||!conf.contains("fieldvalue")){
+				System.out.println("fieldname,fieldvalue must be set in config file when update field.");
+				System.exit(-2);
+			}
+			ZkManager.updateField(cid, conf.getString("fieldname"), conf.getString("fieldvalue"));
+			return ;
+		case 3:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("shardname")||!conf.contains("shardvalue")){
+				System.out.println("shardname,shardvalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+		    sv = JSONObject.fromObject(conf.getString("shardvalue"));
+		    shard = new Shard();
+			shard.setBhash(sv.getInt("bhash"));
+			shard.setEhash(sv.getInt("ehash"));
+			shard.setNo(sv.getInt("no"));
+			shard.setState(sv.getInt("state"));
+			shard.setName(conf.getString("shardname"));
+			ZkManager.updateShardInfo(cid, shard);
+			return ;
+		case 4:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("shardname")||!conf.contains("nodevalue")){
+				System.out.println("shardname,nodevalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			nv = JSONObject.fromObject(conf.getString("nodevalue"));
+			shard = new Shard();
+			shard.setName(conf.getString("shardname"));
+			node = new SolrNode();
+			node.setState(nv.getInt("state"));
+			node.setData(nv.getString("nodes"));
+			shard.setMaster(node);
+			ZkManager.updateShardMaster(cid, shard);
+			return ;
+		case 5:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("shardname")||!conf.contains("nodevalue")){
+				System.out.println("shardname,nodevalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			nv = JSONObject.fromObject(conf.getString("nodevalue"));
+			shard = new Shard();
+			shard.setName(conf.getString("shardname"));
+			node = new SolrNode();
+			node.setState(nv.getInt("state"));
+			node.setData(nv.getString("nodes"));
+			shard.setSlave(node);
+			ZkManager.updateShardSlave(cid, shard);
+			return ;
+		case 6:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("shardname")||!conf.contains("shardvalue")){
+				System.out.println("shardname,shardvalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			sv = JSONObject.fromObject(conf.getString("shardvalue"));
+			shard = new Shard();
+			shard.setBhash(sv.getInt("bhash"));
+			shard.setEhash(sv.getInt("ehash"));
+			shard.setNo(sv.getInt("no"));
+			shard.setState(sv.getInt("state"));
+			shard.setName(conf.getString("shardname"));
+			ZkManager.addShardInfo(cid, shard);
+			return ;
+		case 7:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("shardname")||!conf.contains("nodevalue")){
+				System.out.println("shardname,nodevalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			nv = JSONObject.fromObject(conf.getString("nodevalue")).getJSONObject("master");
+			shard = new Shard();
+			shard.setName(conf.getString("shardname"));
+			node = new SolrNode();
+			node.setState(nv.getInt("state"));
+			
+			nodesValue = null;
+			for(int i = 0 ; i < nv.getJSONArray("nodes").size(); i++){
+				nodesValue = nv.getJSONArray("nodes").getJSONObject(i).getString("url");
+				nodesValue = nodesValue+cid;
+				nv.getJSONArray("nodes").getJSONObject(i).put("url", nodesValue);
+			}
+			node.setData(nv.getJSONArray("nodes").toString());
+			shard.setMaster(node);
+			
+//			node.setData(nv.getString("nodes"));
+//			shard.setMaster(node);
+			ZkManager.addShardMaster(cid, shard);
+			return ;
+		case 8:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("shardname")||!conf.contains("nodevalue")){
+				System.out.println("shardname,nodevalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			nv = JSONObject.fromObject(conf.getString("nodevalue")).getJSONObject("slave");
+			shard = new Shard();
+			shard.setName(conf.getString("shardname"));
+			node = new SolrNode();
+			node.setState(nv.getInt("state"));
+			
+			nodesValue = null;
+			for(int i = 0 ; i < nv.getJSONArray("nodes").size(); i++){
+				nodesValue = nv.getJSONArray("nodes").getJSONObject(i).getString("url");
+				nodesValue = nodesValue+cid;
+				nv.getJSONArray("nodes").getJSONObject(i).put("url", nodesValue);
+			}
+			node.setData(nv.getJSONArray("nodes").toString());
+
+			//			node.setData(nv.getString("nodes"));
+			shard.setSlave(node);
+			ZkManager.addShardSlave(cid, shard);
+			return ;
+		case 9:
+			if(!conf.contains("cidvalue")){
+				System.out.println("cidvalue must be set in config file when update shard info.");
+				System.exit(-2);
+			}
+			ZkManager.addCustomer(cid,conf.getString("cidvalue"));
+			return ;
+		case 10:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			RestApi.initSchema(cid);
+			return ;
+		case 11:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("fieldname")){
+				System.out.println("fieldname must be set in config file when add field info.");
+				System.exit(-2);
+			}
+			RestApi.initSchema(cid,conf.getString("fieldname"));
+			return ;
+		case 12:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("attrs")){
+				System.out.println("attrs must be set in config file when update fields.");
+				System.exit(-2);
+			}
+			ZkManager.updateAttrs(cid, conf.getString("attrs"));
+			return ;
+		case 13:
+			ZkManager.refreshConfig(Sets.newHashSet(cid));
+			if(!conf.contains("fieldname")||!conf.contains("fieldvalue")){
+				System.out.println("fieldname,fieldvalue must be set in config file when update field.");
+				System.exit(-2);
+			}
+			ZkManager.updateAttr(cid, conf.getString("fieldname"), conf.getString("fieldvalue"));
+			return ;
+		case 14:
+			if(!conf.contains("filename")){
+				System.out.println("filename must be set in config file when dump node data.");
+				System.exit(-2);
+			}
+			File file = new File(conf.getString("filename"));
+			if(!file.exists()){
+				System.out.println("the file must be exist when dump node data.");
+				System.exit(-3);
+			}
+			String content = ZkManager.read(cid);
+			if(StringUtils.isEmpty(content)){
+				System.out.println("return value is empty.");
+				System.exit(-4);
+			}
+			ZkDump.dump(content, file);
+			return ;
+		case 15:
+			if(!conf.contains("filename")){
+				System.out.println("filename must be set in config file when dump node data.");
+				System.exit(-2);
+			}
+			file = new File(conf.getString("filename"));
+			if(!file.exists()){
+				System.out.println("the file must be exist when dump node data.");
+				System.exit(-3);
+			}
+			JSONObject json = ZkDump.asString(file);
+			if(json==null){
+				System.out.println("value is not formatted as json object.");
+				System.exit(-4);
+			}
+			ZkManager.updateData(cid, json);
+			return ;
+		default :
+			return ;
+		}
+		
+	}
+
+}
